@@ -1,0 +1,7 @@
+pilot,level,avg minarets,best,survived 100s %
+random,easy,0.0,0.0,0.0
+random,medium,0.0,0.0,0.0
+random,hard,0.1,1.0,0.0
+simple rule,easy,41.0,41.0,100.0
+simple rule,medium,43.0,49.0,80.0
+simple rule,hard,26.9,56.0,25.0
