@@ -52,6 +52,7 @@ function sfx(name) {
   if (name === "best") [523, 659, 784, 1047].forEach((f, i) => tone(f, t + i * 0.09, 0.16, "triangle", 0.16));
   if (name === "medal") { tone(784, t, 0.1, "sine", 0.15); tone(1175, t + 0.1, 0.25, "sine", 0.15); }
   if (name === "click") tone(1200, t, 0.03, "square", 0.05);
+  if (name === "unlock") [784, 988, 1175, 1568].forEach((f, i) => tone(f, t + i * 0.07, 0.18, "triangle", 0.13));
   if (name === "ghostout") { tone(520, t, 0.12, "sine", 0.08, 260); }
   if (name === "record") { tone(1047, t, 0.1, "triangle", 0.14); tone(1568, t + 0.08, 0.22, "triangle", 0.14); tone(2093, t + 0.16, 0.18, "sine", 0.06); }
   if (name === "tick") tone(1500, t, 0.025, "triangle", 0.05);
@@ -153,6 +154,12 @@ function bestAll() {          // your best score on any level
   return Math.max(m, best);
 }
 const unlocked = id => bestAll() >= SKINS[id].need;
+// each stork's name is shown in its medal's colour (Classic stays cream)
+const skinColor = id => (MEDALS.find(m => m.min === SKINS[id].need) || { color: "#f3f1ea" }).color;
+const SHINE = { bronze: "#ffd2a8", silver: "#ffffff", gold: "#fff4b8", emerald: "#b4ffdc" };
+const SHINE_PREVIEWS = true;          // experiment: the shine also sweeps across unlocked stork pictures (set false to turn off)
+// where the band of light is, from -0.3 to 1.3, sweeping once every `period` ms with a pause between sweeps
+const shinePos = (now, period = 2600, offset = 0) => { const k = ((now + offset) % period) / (period * 0.55); return k > 1 ? 9 : k * 1.6 - 0.3; };
 let skin = "classic";
 try { const v = localStorage.getItem("stork-skin"); if (SKINS[v]) skin = v; } catch (e) {}
 if (!unlocked(skin)) skin = "classic";
@@ -173,7 +180,8 @@ function newTower(x, prev) {
 }
 function reset() {
   s = { y: H / 2, prevY: H / 2, vy: 0, score: 0, flapTime: -1000, towers: [], angle: 0, popT: -1e9,
-        startBest: best, recordAt: -1e9, ghost: null, reward: 0, trail: [], startAt: 0 };   // startBest: the record to beat in this run
+        startBest: best, recordAt: -1e9, ghost: null, reward: 0, trail: [], startAt: 0,
+        unlockBase: bestAll(), toast: null };   // unlockBase: your best on any level before this run   // startBest: the record to beat in this run
   for (let i = 0; i < 3; i++) s.towers.push(newTower(W + 40 + i * SPACING, i ? s.towers[i - 1].gapY : null));
   particles = [];
   newBest = false;
@@ -210,13 +218,20 @@ function step(flap) {
     t.x -= speed();
     if (!t.passed && t.x + TOWER_W < STORK_X - STORK_R) {
       t.passed = true; s.score++; s.popT = performance.now(); sfx("point");
+      // a stork that was still locked before this run unlocks the moment you reach its score
+      const fresh = mode !== "watch" && Object.keys(SKINS).find(id => SKINS[id].need === s.score && SKINS[id].need > s.unlockBase);
+      if (fresh) {
+        s.toast = { skin: fresh, at: performance.now() };
+        setTimeout(() => sfx("unlock"), 160);
+        if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
+      }
       rS += 1; if (g && g.alive) rG += 1;
       if (mode !== "watch" && s.startBest > 0 && s.score === s.startBest + 1) {   // just beat the old best, still flying
         s.recordAt = performance.now();
         setTimeout(() => sfx("record"), 90);
         if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
       }
-      if (MEDALS.some(m => m.min === s.score)) setTimeout(() => sfx("medal"), 120);
+      if (!fresh && MEDALS.some(m => m.min === s.score)) setTimeout(() => sfx("medal"), 120);
     }
   }
   if (s.towers[0].x + TOWER_W < 0) {
@@ -697,6 +712,53 @@ function drawLabPanel() {
 }
 
 let capA = mode === "solo" ? 0 : 1, capLabel = "Choose your opponent";
+// "Stork unlocked!" card: slides in at the top right, stays 2.5 s, slides out
+// fill for a rarity word: its medal colour with a band of light sweeping through the letters
+function shineFill(c, id, x, width, now) {
+  if (REDUCED) return skinColor(id);
+  const p = shinePos(now, 1500, 400), cx = x + p * width;
+  const g = c.createLinearGradient(cx - 18, 0, cx + 18, 0);
+  g.addColorStop(0, skinColor(id)); g.addColorStop(0.5, SHINE[id]); g.addColorStop(1, skinColor(id));
+  return g;
+}
+function drawUnlockToast(now) {
+  const e = now - s.toast.at, IN = 320, STAY = 2800, OUT = 380;
+  if (e > STAY + OUT) { s.toast = null; return; }
+  const ease = k => 1 - Math.pow(1 - k, 3);
+  const k = e < IN ? ease(e / IN) : e > STAY ? 1 - ease((e - STAY) / OUT) : 1;   // 0 = hidden, 1 = fully in
+  const w = 150, h = 38, y = lab ? H - GROUND - h - 10 : 6;   // above the score; with Lab view on, just above the ground panel
+  const x = REDUCED ? W - w - 12 : lerp(W + 8, W - w - 12, k);
+  ctx.save();
+  ctx.globalAlpha = REDUCED ? k : Math.min(1, k * 1.4);
+  ctx.shadowColor = "rgba(0,0,0,0.45)"; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4;
+  ctx.fillStyle = "rgba(24,22,26,0.94)"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.fill();
+  ctx.shadowColor = "transparent";
+  if (!REDUCED) {                       // a gold sheen glides across the card while it's on screen
+    const p = shinePos(now, 1500), bx = x + p * w;
+    ctx.save(); ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.clip();
+    const g = ctx.createLinearGradient(bx - 40, y, bx + 40, y + h);
+    g.addColorStop(0, "rgba(255,207,63,0)"); g.addColorStop(0.5, "rgba(255,207,63,0.22)"); g.addColorStop(1, "rgba(255,207,63,0)");
+    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+    ctx.restore();
+  }
+  ctx.strokeStyle = `rgba(255,207,63,${REDUCED ? 0.45 : 0.45 + 0.3 * Math.sin(now / 180) ** 2})`; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.stroke();
+  // the new stork, on a small medal-coloured disc
+  const sk = SKINS[s.toast.skin], m = MEDALS.find(m => m.min === sk.need);
+  ctx.fillStyle = (m ? m.color : "#ffcf3f") + "33"; ctx.beginPath(); ctx.arc(x + 20, y + h / 2, 14, 0, 7); ctx.fill();
+  ctx.save(); ctx.translate(x + 19, y + h / 2 + 2); ctx.scale(0.4, 0.4); paintStork(ctx, sk, -0.5, sk.nightOnly ? 1 : 0); ctx.restore();
+  ctx.textAlign = "left";
+  ctx.font = `13px ${DISPLAY}`; ctx.fillStyle = "#ffcf3f"; ctx.fillText("Stork unlocked!", x + 40, y + 17);
+  // only the rarity word is in its medal colour, outlined; "stork" stays in the normal colour
+  ctx.font = `13px ${DISPLAY}`; ctx.lineJoin = "round";
+  ctx.strokeStyle = "#140e08"; ctx.lineWidth = 3; ctx.strokeText(sk.name, x + 40, y + 32);
+  const nw = ctx.measureText(sk.name).width;
+  ctx.fillStyle = shineFill(ctx, s.toast.skin, x + 40, nw, now);
+  ctx.fillText(sk.name, x + 40, y + 32);
+  ctx.fillStyle = "#f3f1ea"; ctx.fillText(" stork", x + 40 + nw, y + 32);   // same font and size as the rarity word, plain white, no outline or shine
+  ctx.restore();
+}
+
 function drawUI(now) {
   if (state === "play") {
     const k = (now - s.popT) / 220;
@@ -711,6 +773,7 @@ function drawUI(now) {
       const a = Math.max(0, Math.min(1, 1 - (now - s.startAt - 3000) / 600));
       if (a > 0) { ctx.save(); ctx.globalAlpha = a; text("The AI is flying · tap or Esc to stop", W / 2, 118, 13, "#e8e2d6", "center", "SANS"); ctx.restore(); }
     }
+    if (s.toast) drawUnlockToast(now);
     // "HIGH SCORE REACHED": small, under the score, gone after 3.5 s
     const e = now - s.recordAt;
     if (e >= 0 && e < 3500) {
@@ -901,17 +964,36 @@ function drawSkinIcon() {
   c.translate(46, 53); c.scale(1.2, 1.2);   // the whole stork, wing tip to beak, fits in the circle
   paintStork(c, SKINS[skin], -0.5, skin === "emerald" ? 1 : 0);
 }
+let shiny = [];                        // redraw functions of the previews that shimmer
+function shineLoop(now) {
+  if (panelOpen !== "skins") return;   // only runs while the skin page is open
+  for (const draw of shiny) draw(now);
+  requestAnimationFrame(shineLoop);
+}
 function renderSkins() {
-  const grid = $("skinGrid"); grid.innerHTML = "";
+  const grid = $("skinGrid"); grid.innerHTML = ""; shiny = [];
   for (const id in SKINS) {
     const sk = SKINS[id], open = unlocked(id);
     const btn = document.createElement("button");
     btn.type = "button"; btn.className = "skin-card"; btn.disabled = !open;
     btn.setAttribute("aria-pressed", String(id === skin));
-    btn.innerHTML = `<canvas width="240" height="128" aria-hidden="true"></canvas><b>${sk.name}</b><small>${
+    btn.innerHTML = `<canvas width="240" height="128" aria-hidden="true"></canvas><b class="${id === "classic" ? "" : open ? "rare shine" : "rare locked"}" style="--c:${skinColor(id)};--l:${SHINE[id] || "#fff"};animation-delay:${Object.keys(SKINS).indexOf(id) * -0.45}s" data-text="${sk.name}">${sk.name}</b><small>${
       id === "classic" ? "Always yours" : open ? (id === skin ? "Flying now" : "Unlocked") : `Locked · ${sk.need} minarets for ${sk.name.toLowerCase()}`}</small>`;
     const c = btn.querySelector("canvas").getContext("2d");
-    c.scale(2, 2); c.translate(62, 36); c.scale(1.5, 1.5); paintStork(c, sk, -0.5, id === "emerald" ? 1 : 0);
+    const draw = now => {
+      c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, 240, 128);
+      c.scale(2, 2); c.translate(62, 36); c.scale(1.5, 1.5); paintStork(c, sk, -0.5, id === "emerald" ? 1 : 0);
+      if (now == null) return;
+      // the sweep only lights the stork itself (source-atop), never the empty background
+      const p = shinePos(now, 2600, Object.keys(SKINS).indexOf(id) * 450);
+      if (p > 2) return;
+      c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = "source-atop";
+      const bx = p * 240, g = c.createLinearGradient(bx - 40, 0, bx + 40, 128);
+      g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(0.5, SHINE[id] + "aa"); g.addColorStop(1, "rgba(255,255,255,0)");
+      c.fillStyle = g; c.fillRect(0, 0, 240, 128); c.globalCompositeOperation = "source-over";
+    };
+    draw();
+    if (open && id !== "classic" && SHINE_PREVIEWS && !REDUCED) shiny.push(draw);
     btn.addEventListener("click", () => setSkin(id));
     grid.appendChild(btn);
   }
@@ -923,11 +1005,12 @@ $("oUnlockTry").addEventListener("click", e => {
   e.currentTarget.textContent = "Equipped"; e.currentTarget.disabled = true;
 });
 function showPage(id) {
-  if (id === "skins") renderSkins();
+  if (id === "skins") { renderSkins(); }
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("open", p.id === id));
   document.querySelectorAll("[data-page]").forEach(t => t.toggleAttribute("aria-current", t.dataset.page === (id && id !== "skins" ? id : "game")));
   document.querySelectorAll("[data-page][aria-current]").forEach(t => t.setAttribute("aria-current", "page"));
   panelOpen = id || null;
+  if (id === "skins" && shiny.length) requestAnimationFrame(shineLoop);
   ensureAudio(); sfx("click");
   if (!id) canvas.focus?.();
 }

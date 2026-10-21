@@ -128,6 +128,18 @@
     background: rgba(255,255,255,0.05); border: 2px solid transparent; color: var(--fg); }
   .skin-card canvas { position: static; inset: auto; width: 120px; height: 64px; cursor: inherit; }   /* not the full-size game canvas rule */
   .skin-card b { font: 400 18px var(--display); }
+  .skin-card b.rare { font-size: 20px; -webkit-text-stroke: 4px #140e08; paint-order: stroke fill; }   /* medal storks: outlined, like the game's lettering */
+  /* locked: the colour is there, but sunk into the card */
+  .skin-card b.locked { color: color-mix(in srgb, var(--c) 38%, #2b2723); -webkit-text-stroke-color: #1a1612; }
+  /* unlocked: an "enchanted" band of light sweeps through the letters */
+  /* unlocked: an "enchanted" band of light sweeps through the letters (a layer on top, clipped to the letter shapes) */
+  .skin-card b.shine { color: var(--c); position: relative; }
+  .skin-card b.shine::after { content: attr(data-text); position: absolute; inset: 0; -webkit-text-stroke: 0;
+    background: linear-gradient(105deg, transparent 42%, var(--l) 50%, transparent 58%) 0 0 / 300% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: enchant 2.6s linear infinite; animation-delay: inherit; pointer-events: none; }
+  @keyframes enchant { 0% { background-position: 100% 0; } 55%, 100% { background-position: 0% 0; } }
+  @media (prefers-reduced-motion: reduce) { .skin-card b.shine::after { display: none; } }
   .skin-card small { color: var(--muted); font-size: 12px; }
   .skin-card[aria-pressed="true"] { border-color: #ffaa36; background: rgba(255,170,54,0.1); }
   .skin-card[disabled] { cursor: default; }
