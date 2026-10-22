@@ -65,9 +65,11 @@ function toggleMute() {
   ensureAudio(); sfx("click"); syncSoundBtn();
 }
 function syncSoundBtn() {
-  const b = document.getElementById("soundBtn");
+  for (const id of ["soundBtn", "appSound"]) {
+  const b = document.getElementById(id);
   b.setAttribute("aria-pressed", String(!muted)); b.setAttribute("aria-label", muted ? "Sound off" : "Sound on");
   b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${muted ? '<path d="M17 9l5 6M22 9l-5 6"/>' : '<path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>'}</svg>`;
+  }
 }
 
 const MEDALS = [
@@ -122,6 +124,20 @@ function aiDecide(b, towers) {
   b.obs = obs; b.pFlap = 1 / (1 + Math.exp(l[0] - l[1]));
   return l[1] > l[0];
 }
+// Haptics: in the Android app, the phone's haptic engine (Capacitor Haptics plugin);
+// in browsers that allow it, a plain vibration. (Safari on iPhone allows neither.)
+const HAPTICS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics;
+const BUZZ = { crash: [50, 40, 60], record: 40, unlock: 30 };
+function vibrate(kind) { try { if (navigator.vibrate) navigator.vibrate(BUZZ[kind]); } catch (e) {} }
+function buzz(kind) {
+  if (!HAPTICS) return vibrate(kind);
+  try {
+    const p = kind === "crash" ? HAPTICS.impact({ style: "HEAVY" }) : HAPTICS.notification({ type: "SUCCESS" });
+    if (kind === "crash") setTimeout(() => { try { HAPTICS.impact({ style: "MEDIUM" }); } catch (e) {} }, 110);
+    if (p && p.catch) p.catch(() => vibrate(kind));
+  } catch (e) { vibrate(kind); }
+}
+const APP = document.documentElement.classList.contains("app");   // phone layout: the Android app, or a phone browser
 let mode = "solo";                                     // "solo", "race" or "watch"
 // Lab view: shows what the AI sees, its flap trail, its reward and the hitboxes (off by default)
 let lab = false;
@@ -129,6 +145,7 @@ try { lab = localStorage.getItem("stork-lab") === "1"; } catch (e) {}
 // how much practice each opponent had (training steps), from section 8 of the notebook
 const OPP_STEPS = { "0": [220000, 240000, 600000, 1000000], "0.5": [240000, 300000, 400000, 1000000], "1": [400000, 700000, 800000, 900000] };
 try { mode = localStorage.getItem("stork-mode") || "solo"; } catch (e) {}
+if (!["solo", "race", "watch"].includes(mode)) mode = "solo";
 const gapSize = () => 180 - 50 * difficulty;
 const speed = () => 3 + 1 * difficulty;
 
@@ -223,13 +240,13 @@ function step(flap) {
       if (fresh) {
         s.toast = { skin: fresh, at: performance.now() };
         setTimeout(() => sfx("unlock"), 160);
-        if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
+        buzz("unlock");
       }
       rS += 1; if (g && g.alive) rG += 1;
       if (mode !== "watch" && s.startBest > 0 && s.score === s.startBest + 1) {   // just beat the old best, still flying
         s.recordAt = performance.now();
         setTimeout(() => sfx("record"), 90);
-        if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+        buzz("record");
       }
       if (!fresh && MEDALS.some(m => m.min === s.score)) setTimeout(() => sfx("medal"), 120);
     }
@@ -255,9 +272,7 @@ function die() {
   flash = REDUCED ? 0 : 1;
   sfx("hit");
   
-  if (navigator.vibrate) {
-    try { navigator.vibrate([50, 40, 60]); } catch(e) {}
-  }
+  buzz("crash");
 
   setTimeout(() => sfx("fall"), 180);
   
@@ -311,6 +326,7 @@ function showGameOver() {
   $("oBestLbl").textContent = mode === "watch" ? "your best" : "best";
   const race = $("oRace"), g = s.ghost;
   race.hidden = !g;
+  race.classList.remove("lost");
   if (g) {
     // the result is only what you saw: if the AI was still flying when you crashed, it outlasted you
     const aiAlive = g.alive, won = !aiAlive && score > g.score, tie = !aiAlive && score === g.score;
@@ -358,15 +374,22 @@ function showGameOver() {
    ===================================================================== */
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+// On tall phone screens the game area (400 x 600) doesn't fill the screen, so the canvas
+// reaches past it: more sky above, more ground below. The game itself is unchanged.
+let OFF_T = 0, OFF_B = 0;
 function fitCanvas() {
-  const shown = canvas.parentElement.getBoundingClientRect().height || H;
-  const k = Math.min(3, Math.max(1, shown / H) * (devicePixelRatio || 1));
-  canvas.width = Math.round(W * k); canvas.height = Math.round(H * k);
+  const stage = canvas.parentElement.getBoundingClientRect(), wrap = canvas.parentElement.parentElement.getBoundingClientRect();
+  const shown = stage.height || H, unit = shown / H;
+  OFF_T = Math.max(0, Math.round((stage.top - wrap.top) / unit)); OFF_B = Math.max(0, Math.round((wrap.bottom - stage.bottom) / unit));
+  canvas.style.top = -(OFF_T * unit) + "px"; canvas.style.height = ((H + OFF_T + OFF_B) * unit) + "px";
+  const k = Math.min(3, Math.max(1, unit) * (devicePixelRatio || 1));
+  canvas.width = Math.round(W * k); canvas.height = Math.round((H + OFF_T + OFF_B) * k);
   document.getElementById("over").style.fontSize = (shown / H * 16) + "px";
-  document.getElementById("modes").style.fontSize = (shown / H * 16) + "px";
-  document.getElementById("opps").style.fontSize = (shown / H * 16) + "px";
-  document.getElementById("skinBtn").style.fontSize = (shown / H * 16) + "px";
-  ctx.setTransform(k, 0, 0, k, 0, 0);
+  // in the app, the start-screen buttons are 25% bigger so they're easy to hit with a thumb
+  const btn = shown / H * 16 * (document.documentElement.classList.contains("app") ? 1.25 : 1);
+  for (const id of ["modes", "skinBtn", "appTools", "appLevels"]) document.getElementById(id).style.fontSize = btn + "px";
+  for (const id of ["opps"]) document.getElementById(id).style.fontSize = Math.min(btn, shown / H * 16 * 1.1) + "px";   // four opponents: only a little bigger, so the row still fits
+  ctx.setTransform(k, 0, 0, k, 0, OFF_T * k);
 }
 fitCanvas();
 addEventListener("resize", fitCanvas);
@@ -391,7 +414,7 @@ function drawSky(night) {
   const sky = skyAt(night);
   const g = ctx.createLinearGradient(0, 0, 0, H - GROUND);
   g.addColorStop(0, sky.top); g.addColorStop(1, sky.bottom);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H - GROUND);
+  ctx.fillStyle = g; ctx.fillRect(0, -OFF_T, W, H - GROUND + OFF_T);
   if (night > 0.45) {
     ctx.fillStyle = `rgba(255,255,240,${(night - 0.45) * 1.6})`;
     for (const st of STARS) { ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, 7); ctx.fill(); }
@@ -399,7 +422,7 @@ function drawSky(night) {
   const sunY = lerp(330, 520, Math.min(1, night * 1.6));
   const glow = ctx.createRadialGradient(290, sunY, 10, 290, sunY, 120);
   glow.addColorStop(0, `rgba(255,220,150,${0.7 * (1 - night)})`); glow.addColorStop(1, "rgba(255,220,150,0)");
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = glow; ctx.fillRect(0, -OFF_T, W, H + OFF_T);
   ctx.fillStyle = `rgba(255,236,190,${1 - night})`; ctx.beginPath(); ctx.arc(290, sunY, 34, 0, 7); ctx.fill();
   if (night > 0.6) {
     const a = (night - 0.6) * 2.5;
@@ -485,13 +508,13 @@ function drawMinaret(t, night) {
 function drawCloud(t, night) {
   const gap = t.gap, x0 = ix(t), bottom = t.gapY - gap / 2;
   const c = mix([84, 90, 116], [36, 38, 60], night);
-  ctx.fillStyle = c; ctx.fillRect(x0 - 6, 0, TOWER_W + 12, bottom - 16);
+  ctx.fillStyle = c; ctx.fillRect(x0 - 6, -OFF_T, TOWER_W + 12, bottom - 16 + OFF_T);
   for (let j = 0; j < 4; j++) {
     const cx = x0 - 6 + j * (TOWER_W + 12) / 3;
     ctx.beginPath(); ctx.arc(cx, bottom - 16, 16, 0, 7); ctx.fill();
   }
   ctx.fillStyle = "rgba(255,255,255,0.08)";
-  ctx.fillRect(x0 - 6, 0, 10, bottom - 20);
+  ctx.fillRect(x0 - 6, -OFF_T, 10, bottom - 20 + OFF_T);
 }
 function drawStork(b = s) {
   const ghost = b !== s, down = ghost ? !b.alive : state === "over";
@@ -504,7 +527,7 @@ function drawStork(b = s) {
     if (fade <= 0) { ctx.restore(); return; }
     ctx.globalAlpha *= 0.5 * fade;          // multiply, so an outer fade still works
     ctx.font = `600 11px ${SANS}`; ctx.textAlign = "center"; ctx.fillStyle = "#e9f4ff";
-    ctx.fillText(opponent, x, y - 22);
+    ctx.fillText(b.label || opponent, x, y - 22);
   }
   ctx.translate(x, y); ctx.rotate(b.angle);
   const flapElapsed = performance.now() - b.flapTime;          // smooth wing flap, timed in real time
@@ -792,10 +815,14 @@ function drawUI(now) {
     }
     return;
   }
-  ctx.fillStyle = state === "over" ? "rgba(8,8,10,0.78)" : "rgba(8,8,10,0.5)"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = state === "over" ? "rgba(8,8,10,0.78)" : "rgba(8,8,10,0.5)"; ctx.fillRect(0, -OFF_T, W, H + OFF_T + OFF_B);
   if (state === "ready") {
     text("a Morocco in Data experiment", W / 2, 108, 14, "#cfc9bd", "center", "SANS");
     ctx.save(); ctx.translate(W / 2, 214); ctx.rotate(-3 * Math.PI / 180);   // tilted, like the page headings
+    // a solid drop shadow under the whole title, like the headings on the pages and the logo in the bar
+    ctx.font = `80px ${DISPLAY}`; ctx.textAlign = "center"; ctx.lineJoin = "round";
+    ctx.fillStyle = ctx.strokeStyle = "rgba(24,12,4,0.55)"; ctx.lineWidth = 80 * 0.09 * 2;
+    for (const [w, y] of [["Stork", -36], ["Flight", 36]]) { ctx.strokeText(w, 0, y + 10); ctx.fillText(w, 0, y + 10); }
     text("Stork", 0, -36, 80, "#fff");
     text("Flight", 0, 36, 80, "#f0a24a");
     ctx.restore();
@@ -813,16 +840,13 @@ function drawUI(now) {
     ctx.globalAlpha = 1 - capA; text("Fly between the minarets and the storm clouds.", W / 2, 380, 15, "#e8e2d6", "center", "SANS");
     ctx.globalAlpha = capA; text(capLabel, W / 2, 350, 14, "#e8e2d6", "center", "SANS");
     ctx.restore();
-    pill(LEVEL(), W / 2, 420, true);
-    const pulse = 0.6 + 0.4 * Math.sin(now / 300);
-    ctx.save(); ctx.globalAlpha = REDUCED ? 1 : pulse;
-    const verb = mode === "watch" ? "watch" : mode === "race" ? "race" : "fly";
-    text(TOUCH ? `Tap to ${verb}` : `Tap or press space to ${verb}`, W / 2, 472, 22, "#fff");   // no "space" on phones
-    ctx.restore();
+    if (!APP) pill(LEVEL(), W / 2, 420, true);   // in the app, real Easy / Medium / Hard buttons sit here
+    // the pulsing "tap!" hint already says how to start, so no extra "tap to fly" line
     if (best) {
-      text(`Best ${best}`, W / 2, 504, 15, "#cfc9bd", "center", "SANS");
+      const by = APP ? 478 : 458;   // just under the level: the phone layout's switch is taller than the website's label
+      text(`Best ${best}`, W / 2, by, 15, "#cfc9bd", "center", "SANS");
       const m = medalFor(best);
-      if (m) star(W / 2 + ctx.measureText(`Best ${best}`).width / 2 + 12, 499, 6, m.color);
+      if (m) star(W / 2 + ctx.measureText(`Best ${best}`).width / 2 + 12, by - 5, 6, m.color);
     }
     return;
   }
@@ -854,7 +878,7 @@ function draw(now) {
   
   for (const t of s.towers) { drawCloud(t, night); drawMinaret(t, night); }
   
-  ctx.fillStyle = mix([178, 120, 70], [40, 34, 44], night * 0.7); ctx.fillRect(0, H - GROUND, W, GROUND);
+  ctx.fillStyle = mix([178, 120, 70], [40, 34, 44], night * 0.7); ctx.fillRect(0, H - GROUND, W, GROUND + OFF_B);
   ctx.fillStyle = mix([206, 150, 96], [56, 48, 60], night * 0.7); ctx.fillRect(0, H - GROUND, W, 6);
   ctx.fillStyle = "rgba(0,0,0,0.08)";
   layer(1, 40, x => ctx.fillRect(x, H - GROUND + 18, 20, 4));
@@ -871,7 +895,7 @@ function draw(now) {
   drawParticles("confetti");             // above the dimming, so it stays bright
   if (state === "ready") drawStork();
   if (flash > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${flash * 0.7})`; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = `rgba(255,255,255,${flash * 0.7})`; ctx.fillRect(0, -OFF_T, W, H + OFF_T + OFF_B);
     flash = Math.max(0, flash - 0.08 * frameScale);
   }
 }
@@ -894,10 +918,14 @@ function input() {
   }
   if (state === "ready") { state = "play"; s.prevY = s.y; s.vy = 0; pending = mode !== "watch"; launch(); if (pending) sfx("flap"); return; }
 }
-function toMenu() { hideGameOver(); reset(); distance = prevDistance = 0; state = "ready"; sfx("click"); }
+function retry() { startFlight(); }
+function toMenu() {
+  hideGameOver(); reset(); distance = prevDistance = 0; state = "ready"; sfx("click"); }
 
+// during a run the level can't change and pages can't open: it would restart or pause your run
+const inRun = () => state === "play";
 function changeDifficulty(newDifficulty) {
-  if (trans) return;
+  if (trans || inRun()) return;
   if (newDifficulty === difficulty) return;
   
   if (panelOpen) {
@@ -933,6 +961,7 @@ function changeDifficulty(newDifficulty) {
 
 const canReact = () => performance.now() - deathTime > 900;
 addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;   // typing a name or a room code isn't a game shortcut
   if (e.target.tagName === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return;
   if (e.code === "KeyM") { toggleMute(); return; }
   if (e.code === "KeyL") { setLab(!lab); return; }
@@ -940,7 +969,7 @@ addEventListener("keydown", e => {
   if (e.code === "Space" || e.code === "ArrowUp" || e.code === "Enter") {
     e.preventDefault(); if (e.repeat) return;
     ensureAudio();
-    if (state === "over") { if (canReact()) startFlight(); }
+    if (state === "over") { if (canReact()) retry(); }
     else input();
   }
   if (e.code === "Escape" && state === "over" && canReact()) toMenu();
@@ -1005,7 +1034,9 @@ $("oUnlockTry").addEventListener("click", e => {
   e.currentTarget.textContent = "Equipped"; e.currentTarget.disabled = true;
 });
 function showPage(id) {
+  if (id && inRun()) return;
   if (id === "skins") { renderSkins(); }
+  if (id && $(id)) $(id).scrollTop = 0;   // a page always opens at the top, not where you left it
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("open", p.id === id));
   document.querySelectorAll("[data-page]").forEach(t => t.toggleAttribute("aria-current", t.dataset.page === (id && id !== "skins" ? id : "game")));
   document.querySelectorAll("[data-page][aria-current]").forEach(t => t.setAttribute("aria-current", "page"));
@@ -1015,10 +1046,10 @@ function showPage(id) {
   if (!id) canvas.focus?.();
 }
 document.querySelectorAll("[data-page]").forEach(t => t.addEventListener("click", () => { showPage(t.dataset.page === "game" ? null : t.dataset.page); t.blur(); }));
-$("oRetry").addEventListener("click", () => { if (canReact()) startFlight(); });
+$("oRetry").addEventListener("click", () => { if (canReact()) retry(); });
 $("oHome").addEventListener("click", () => { if (canReact()) toMenu(); });
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => showPage(null)));
-document.getElementById("soundBtn").addEventListener("click", e => { toggleMute(); e.currentTarget.blur(); });
+for (const id of ["soundBtn", "appSound"]) document.getElementById(id).addEventListener("click", e => { toggleMute(); e.currentTarget.blur(); });
 syncSoundBtn();
 document.querySelectorAll("[data-d]").forEach(b => b.addEventListener("click", () => {
   changeDifficulty(+b.dataset.d);
@@ -1029,7 +1060,7 @@ function setMode(m) {
   mode = m;
   try { localStorage.setItem("stork-mode", m); } catch (e) {}
   document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
-  if (state === "ready") reset();
+  // no reset here: the start screen doesn't depend on the mode, and a reset would snap the floating stork back to the middle
   ensureAudio(); sfx("click");
 }
 document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { setMode(b.dataset.mode); b.blur(); }));
@@ -1086,12 +1117,16 @@ function loop(now) {
   frameScale = Math.min(3, frameMs / (1000 / 60));
   draw(now);
   // both rows stay put while the course changes; they only fade when the screen really changes
+  const busy = inRun();   // grey out the bottom bar (all but the sound button) during a run
+  if (document.body.classList.contains("busy") !== busy) document.body.classList.toggle("busy", busy);
   const showModes = state === "ready" && !panelOpen;
   if (modesEl.classList.contains("gone") === showModes) modesEl.classList.toggle("gone", !showModes);
-  const showOpps = showModes && mode !== "solo";
+  const showOpps = showModes && (mode === "race" || mode === "watch");
   if (oppsEl.classList.contains("gone") === showOpps) oppsEl.classList.toggle("gone", !showOpps);
-  const sb = $("skinBtn");
-  if (sb.classList.contains("gone") === showModes) sb.classList.toggle("gone", !showModes);
+  for (const id of ["skinBtn", "appTools", "appLevels"]) {
+    const el = $(id);
+    if (el.classList.contains("gone") === showModes) el.classList.toggle("gone", !showModes);
+  }
   requestAnimationFrame(loop);
 }
 reset();

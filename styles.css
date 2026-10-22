@@ -5,6 +5,8 @@
     --sans: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { -webkit-tap-highlight-color: transparent; }   /* no blue flash when tapping on phones */
+  body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }   /* holding a finger down doesn't select text */
   html, body { height: 100%; background: var(--bg); color: var(--fg); }
   body { font: 500 16px/1.5 var(--sans); display: flex; flex-direction: column; height: 100svh; overflow: hidden; -webkit-font-smoothing: antialiased; }
   button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
@@ -14,9 +16,10 @@
   .stage { position: relative; flex: none;
     height: min(calc(100vh - var(--bar-h)), 150vw); height: min(calc(100svh - var(--bar-h)), 150vw);
     width: calc(min(calc(100vh - var(--bar-h)), 150vw) * 2 / 3); width: calc(min(calc(100svh - var(--bar-h)), 150vw) * 2 / 3); }
-  canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: manipulation; cursor: pointer; outline: none; }
+  canvas { position: absolute; left: 0; top: 0; display: block; width: 100%; height: 100%;   /* top and height set by fitCanvas */
+    touch-action: manipulation; cursor: pointer; outline: none; }
 
-  .panel { position: absolute; inset: 0; overflow-y: auto; padding: 28px 24px 32px;
+  .panel { position: fixed; left: 0; right: 0; top: 0; bottom: var(--bar-h); overflow-y: auto; padding: max(28px, calc(env(safe-area-inset-top) + 12px)) max(24px, calc(50vw - 280px)) 32px;   /* below a camera cutout */
     background: rgba(24,20,16,0.96); opacity: 0; visibility: hidden; transform: translateY(16px);
     transition: opacity 220ms, transform 300ms cubic-bezier(.16,1,.3,1), visibility 0s 300ms; }
   .panel.open { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
@@ -48,6 +51,9 @@
   .tab[aria-current="page"] { background: rgba(255,255,255,0.08); color: var(--fg); }
   .tab:hover { color: var(--fg); }
   .spacer { flex: 1; }
+  /* during a run: the bar is greyed out and can't be clicked, except the sound button */
+  .bar .tab, .bar .levels-pick { transition: opacity 200ms ease; }
+  body.busy .bar .tab, body.busy .bar .levels-pick { opacity: 0.35; pointer-events: none; }
   .levels-pick { display: inline-flex; background: rgba(0,0,0,0.25); border-radius: 999px; padding: 3px; }
   .levels-pick button { font-weight: 600; font-size: 13px; color: var(--muted); border-radius: 999px; padding: 4px 11px; }
   .levels-pick button[aria-pressed="true"] { background: var(--accent); color: #fff; }
@@ -61,7 +67,8 @@
     .levels-pick button { padding: 4px 7px; font-size: 12px; }
   }
   @media (max-width: 420px) {
-    .logo { display: none; }
+    .logo, .tab[data-page="game"] { display: none; }   /* every page has its own "back to the game" button */
+    .tab { min-width: 0; }
     .bar { padding: 0 4px; gap: 2px; }
     .tab { padding: 0 6px; font-size: 12px; }
     .levels-pick button { padding: 4px 6px; font-size: 11px; }
@@ -96,6 +103,21 @@
   .modes { transition: opacity 220ms ease, transform 280ms cubic-bezier(.16,1,.3,1), visibility 0s; }
   .modes.gone { opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(-50%) translateY(0.5em);
     transition: opacity 180ms ease, transform 280ms ease, visibility 0s 180ms; }
+  /* the game mode row looks like tabs (an underline), so it doesn't look like the Easy / Medium / Hard switch */
+  #modes { border-radius: 1em; padding: 0 0.35em; gap: 0.1em; }
+  #modes button { position: relative; background: none; border-radius: 0; color: #cfc4ad; padding: 0.8em 0.85em 0.9em; }
+  #modes button[aria-pressed="true"] { background: none; color: #ffb35c; }
+  #modes button::after { content: ""; position: absolute; left: 0.85em; right: 0.85em; bottom: 0.35em; height: 0.2em; border-radius: 1em;
+    background: #ffb35c; transform: scaleX(0); transition: transform 200ms ease; }
+  #modes button[aria-pressed="true"]::after { transform: scaleX(1); }
+  /* in the app: a tab bar along the bottom of the screen */
+  html.app #modes { left: calc(var(--side) - 14px); right: calc(var(--side) - 14px); transform: none; max-width: none; justify-content: space-evenly; border-radius: 0;
+    bottom: 0; padding: 0 0 env(safe-area-inset-bottom, 0px); background: rgba(20,16,12,0.7); border-top: 1px solid rgba(243,241,234,0.08); }
+  html.app #modes.gone { transform: translateY(0.5em); }
+  html.app #modes button { flex: 1; padding: 1em 0.5em 1.15em; }
+  html.app #modes button::after { left: 30%; right: 30%; bottom: 0.45em; }
+  /* inside an itch.io embed, itch draws its fullscreen button over the bottom-right corner: keep the tabs clear of it */
+  html.framed #modes { padding-right: 46px; }
   .modes.opps { top: 59.5%; background: rgba(20,16,12,0.45); }
   .modes.opps button { font-size: 0.72em; padding: 0.55em 0.75em; }
   .modes.opps button[aria-pressed="true"] { background: #f3f1ea; color: #3a2210; }
@@ -123,6 +145,28 @@
   .skin-btn:hover .brush { transform: rotate(-14deg); }
   .skin-btn canvas { position: static; inset: auto; width: 2.4em; height: 2.4em; cursor: inherit; }   /* not the full-size game canvas rule */
   .skin-btn.gone { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 180ms ease, visibility 0s 180ms; }
+  /* Android app: no bottom bar; sound, help and about sit top left, the difficulty where the level pill was */
+  .app-tools, .app-levels, .app-only { display: none; }
+  html.app .web-only { display: none; }
+  html.app li.app-only { display: list-item; }
+  html.app { --bar-h: 0px; }
+  html.app .bar { display: none; }
+  html.app .app-tools { display: flex; position: absolute; top: 2.2%; left: 3%; gap: 0.45em; transition: opacity 220ms ease, visibility 0s; }
+  html.app .app-tools.gone { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 180ms ease, visibility 0s 180ms; }
+  html.app .app-levels { display: flex; top: 67%; }
+  /* tall phone screens: the corner buttons go to the real corners, the mode switch to the bottom */
+  /* the corners of the game area: the screen edge on phones, the edge of the game on wider screens (tablets) */
+  html.app { --side: max(14px, calc(50vw - min(100svh * 2 / 3, 100vw) / 2 + 14px)); }
+  html.app .app-tools { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); left: var(--side); }
+  html.app .skin-btn { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); right: var(--side); }
+  html.app #modes { position: fixed; top: auto; }
+  html.app .modes { max-width: calc(100vw - 16px); }
+  .round-btn { width: 2.6em; height: 2.6em; padding: 0; border-radius: 50%; display: grid; place-items: center; color: #f5eee2;
+    background: rgba(20,16,12,0.55); border: 1px solid rgba(243,241,234,0.18); transition: transform 160ms ease, background 160ms; }
+  .round-btn:active { transform: scale(0.93); }
+  .round-btn span { font: 400 1.35em/1 var(--display); }
+  .round-btn svg { width: 1.2em; height: 1.2em; }
+  .over .btn[disabled] { opacity: 0.45; pointer-events: none; }
   .skin-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 14px; }
   .skin-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 8px; border-radius: 14px;
     background: rgba(255,255,255,0.05); border: 2px solid transparent; color: var(--fg); }
