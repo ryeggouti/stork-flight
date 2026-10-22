@@ -100,6 +100,24 @@ For each level I picked four snapshots by skill: Beginner (about 25% of the maxi
 
 The networks are exported from Python to `networks.js` and run directly in the browser. I checked that the browser versions make exactly the same decisions as the Python models.
 
+### 6. Part 3: turning it into an app
+
+I took the game further as a separate project: an Android app and an
+online 1v1 mode, in [stork-flight-app](https://github.com/ryeggouti/stork-flight-app)
+([play it](https://ryeggouti.github.io/stork-flight-app/)).
+
+- **Android app:** the game files are packed into a real APK (built with
+  Capacitor by a GitHub Actions workflow), fullscreen, with haptics.
+- **1v1 online:** two devices connect directly to each other with a 4-letter
+  room code. Both build the same course from one shared seed, so only the
+  storks' heights travel over the network.
+- **Testing on real devices:** I tested it on my phone, my mom's Samsung and a
+  computer, and over a VPN. That's how I found bugs like oversized buttons from
+  the phone's font setting and being able to change the level mid-match.
+
+I designed the features and tested everything myself; an AI coding assistant
+wrote most of the code for this part.
+
 ## Limits
 
 - 20 test courses per AI is a small sample.
