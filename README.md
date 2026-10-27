@@ -137,6 +137,7 @@ wrote most of the code for this part.
 
 - **Play:** open `index.html` in a browser, or use the link at the top.
 - **Train:** open the notebook in Colab and run the cells in order. It writes `stork_env.py` for you.
+- **Controls:** Press Space or ↑ to flap on desktop, or click/tap on mobile. Press M to toggle sound, L for Lab view, and Esc to close an open panel.
 
 ---
 
