@@ -1,5 +1,7 @@
 # Stork Flight: an AI learns to fly over Morocco
 
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/ryeggouti/badge.svg)](https://hub.xerj.org/contributors/ryeggouti)
+
 **[▶ Play it in your browser](https://ryeggouti.github.io/stork-flight/)** · [Open the notebook in Colab](https://colab.research.google.com/github/ryeggouti/stork-flight/blob/main/stork_flight.ipynb)
 
 **Part 2 of my reinforcement learning project.** In [Part 1](https://github.com/ryeggouti/lunar-lander-rl) I used a ready-made environment (Lunar Lander). Here I built my own: a white stork flying between minarets and storm clouds over a Moroccan city. Then I trained an AI to play it, tested what it learned, and put the trained AIs into a game you can race against.
